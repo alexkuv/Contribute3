@@ -18,13 +18,13 @@
     "dev": "concurrently \"npm run start\" \"npm run frontend:wait\"",
     "backend": "cd backend && npm run start:dev",
     "frontend": "cd frontend && npm run dev",
-    "frontend:wait": "cd frontend && npx wait-on http://localhost:8000 --timeout 60000 && npm run dev",
+    "frontend:wait": "cd frontend && npx wait-on http://localhost:8000/health --timeout 60000 && npm run dev",
 
     "build": "npm run build:backend && npm run build:frontend",
     "build:backend": "cd backend && npm run build",
     "build:frontend": "cd frontend && npm run build",
 
-    "start": "cd backend && npm run start:prod",
+    "start": "cd backend && npm run start:dev",
     "prod": "npm run build && npm run start"
   },
   "devDependencies": {
