@@ -1,6 +1,6 @@
-import type { WalletProvider } from '../../types/wallet';
-import Button from '../ui/Button';
-import {getFakeAddress, getFakeBalance} from '../../utils/walletUtils';
+import type { WalletProvider } from '@/types/wallet';
+import Button from '@/components/ui/Button';
+import {getFakeAddress, getFakeBalance} from '@/utils/walletUtils';
 
 type Props = {
   providers: WalletProvider[];

@@ -1,6 +1,6 @@
-import type { ConnectedWallet } from '../../types/wallet';
-import { shortenAddress } from '../../utils/walletUtils';
-import Button from '../ui/Button';
+import type { ConnectedWallet } from '@/types/wallet';
+import { shortenAddress } from '@/utils/walletUtils';
+import Button from '@/components/ui/Button';
 
 type Props = {
   wallet: ConnectedWallet;

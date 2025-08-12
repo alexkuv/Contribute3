@@ -1,6 +1,6 @@
-import WalletConnect from '../wallet/WalletConnect';
-import WalletInfo from '../wallet/WalletInfo';
-import type { ConnectedWallet } from '../../types/wallet';
+import WalletConnect from '@/components/wallet/WalletConnect';
+import WalletInfo from '@/components/wallet/WalletInfo';
+import type { ConnectedWallet } from '@/types/wallet';
 
 type Props = {
   connected: boolean;

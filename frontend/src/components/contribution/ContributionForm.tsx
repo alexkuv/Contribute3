@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import LoadingSpinner from '../ui/LoadingSpinner';
-import Button from '../ui/Button';
+import LoadingSpinner from '@/components/ui/LoadingSpinner';
+import Button from '@/components/ui/Button';
 
 type Network = 'ethereum' | 'solana';
 

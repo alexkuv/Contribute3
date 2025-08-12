@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
-import Header from '../components/layout/Header';
-import Footer from '../components/layout/Footer';
-import ContributionForm from '../components/contribution/ContributionForm';
-import ContributionHistory from '../components/contribution/ContributionHistory';
+import Header from '@/components/layout/Header';
+import Footer from '@/components/layout/Footer';
+import ContributionForm from '@/components/contribution/ContributionForm';
+import ContributionHistory from '@/components/contribution/ContributionHistory';
 
 
 import type { WalletProvider, ConnectedWallet } from '../types/wallet';
