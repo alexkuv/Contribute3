@@ -1,33 +1,56 @@
-import WalletConnect from '@/components/wallet/WalletConnect';
-import WalletInfo from '@/components/wallet/WalletInfo';
-import type { ConnectedWallet } from '@/types/wallet';
+// components/layout/Header.tsx
+import React from 'react';
+import type { WalletProvider, ConnectedWallet, WalletType } from '@/types/wallet';
+import { shortenAddress } from '@/utils/walletUtils';
+import Button from '@/components/ui/Button';
 
 type Props = {
   connected: boolean;
   wallet: ConnectedWallet | null;
-  providers: { id: string; name: string; icon: any }[];
-  onConnect: (wallet: { provider: string; address: string; balance: string }) => void;
+  providers: WalletProvider[];
+  onConnect: (providerId: WalletType) => void;
   onDisconnect: () => void;
 };
 
-export default function Header({
-  connected,
-  wallet,
-  providers,
-  onConnect,
-  onDisconnect,
-}: Props) {
+const Header: React.FC<Props> = ({ connected, wallet, providers, onConnect, onDisconnect }) => {
   return (
-    <header className="border-b border-purple-700 px-6 py-4">
-      <div className="max-w-5xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-4">
-        <h1 className="text-2xl font-bold">Contribute3</h1>
-
-        {connected && wallet ? (
-          <WalletInfo wallet={wallet} onDisconnect={onDisconnect} />
-        ) : (
-          <WalletConnect providers={providers} onConnect={onConnect} />
-        )}
+    <header className="bg-gray-900 border-b border-purple-700 py-4">
+      <div className="max-w-5xl mx-auto px-6 flex justify-between items-center">
+        <h1 className="text-2xl font-bold text-purple-400">CrowdFund DApp</h1>
+        <div>
+          {connected && wallet ? (
+            <div className="bg-white/10 backdrop-blur-sm border border-purple-700 rounded-xl p-4 flex items-center justify-between">
+              <div>
+                <p className="text-sm"><strong>Network:</strong> {wallet.provider === 'ethereum' ? 'Ethereum' : 'Solana'}</p>
+                <p className="text-sm"><strong>Address:</strong> {shortenAddress(wallet.address)}</p>
+                <p className="text-sm"><strong>Balance:</strong> {wallet.balance} {wallet.provider === 'ethereum' ? 'ETH' : 'SOL'}</p>
+              </div>
+              <Button onClick={onDisconnect} variant="danger" size="sm">
+                Disconnect
+              </Button>
+            </div>
+          ) : (
+            <div className="flex items-center space-x-2">
+              {providers.map((provider) => {
+                const Icon = provider.icon;
+                return (
+                  <Button
+                    key={provider.id}
+                    onClick={() => onConnect(provider.id)}
+                    variant="primary"
+                    className="flex items-center"
+                  >
+                    <Icon className="w-4 h-4 mr-2" />
+                    Connect {provider.name}
+                  </Button>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
     </header>
   );
-}
+};
+
+export default Header;
