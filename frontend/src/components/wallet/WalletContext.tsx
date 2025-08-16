@@ -1,17 +1,19 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import type { ConnectedWallet, WalletProvider as WalletProviderType, WalletType, TokenBalance } from '@/types/wallet';
-import { getFakeAddress, getFakeBalance } from '@/utils/walletUtils';
 import { saveContribution } from '@/services/api';
 
-const ERC20_ABI = [
-  "function balanceOf(address owner) view returns (uint256)",
-  "function decimals() view returns (uint8)",
-  "function symbol() view returns (string)"
-];
+declare global {
+  interface Window {
+    ethereum?: any;
+  }
+}
 
-// ABI для transfer функции ERC-20
-const ERC20_TRANSFER_ABI = ["function transfer(address to, uint256 amount)"];
+const DONATION_WALLET_ADDRESS = import.meta.env.VITE_DONATION_WALLET_ADDRESS || '0x7D0b9B10CebDb3996005239Fd8216A9fcAA8787C';
+
+const isValidEthereumAddress = (address: string): boolean => {
+  return /^0x[a-fA-F0-9]{40}$/.test(address);
+};
 
 type WalletContextType = {
   wallet: ConnectedWallet | null;
@@ -20,17 +22,11 @@ type WalletContextType = {
   connectWallet: (providerId: WalletType) => Promise<void>;
   disconnectWallet: () => void;
   refreshBalance: () => Promise<void>;
-  sendContribution: (amount: string, network: WalletType, tokenType: 'ETH' | 'LINK') => Promise<string | null>; // Обновлено
+  sendContribution: (amount: string, network: WalletType) => Promise<string | null>;
   getTokenBalances: () => Promise<TokenBalance[]>;
 };
 
-
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
-
-// Адрес получателя
-const RECIPIENT_ADDRESS = '0x9B87Be4a795BCa96eFC23bf8a0911a2e993983E6';
-
-const CONVERSION_RATE = 1000;
 
 export const WALLET_PROVIDERS: WalletProviderType[] = [
   {
@@ -40,127 +36,97 @@ export const WALLET_PROVIDERS: WalletProviderType[] = [
       if (typeof window.ethereum === 'undefined') {
         throw new Error('MetaMask not found. Please install MetaMask.');
       }
-
+      
       try {
         await window.ethereum.request({ method: 'eth_requestAccounts' });
-        
-        const chainId = await window.ethereum.request({ method: 'eth_chainId' });
-        if (chainId !== '0xaa36a7') { // Sepolia chainId (11155111)
-          try {
-            await window.ethereum.request({
-              method: 'wallet_switchEthereumChain',
-              params: [{ chainId: '0xaa36a7' }],
-            });
-          } catch (switchError: any) {
-            if (switchError.code === 4902) {
-              await window.ethereum.request({
-                method: 'wallet_addEthereumChain',
-                params: [{
-                  chainId: '0xaa36a7',
-                  chainName: 'Sepolia Test Network',
-                  rpcUrls: ['https://rpc.sepolia.org'],
-                  nativeCurrency: {
-                    name: 'SepoliaETH',
-                    symbol: 'SEP',
-                    decimals: 18
-                  },
-                  blockExplorerUrls: ['https://sepolia.etherscan.io']
-                }]
-              });
-            } else {
-              throw switchError;
-            }
-          }
-        }
-
         const provider = new ethers.BrowserProvider(window.ethereum);
         const signer = await provider.getSigner();
         const address = await signer.getAddress();
+        
+        if (!isValidEthereumAddress(address)) {
+          throw new Error('Invalid wallet address received');
+        }
+        
         const balanceWei = await provider.getBalance(address);
         const balance = ethers.formatEther(balanceWei);
-
-        return {
-          address,
-          balance,
-        };
+        
+        if (parseFloat(balance) < 0) {
+          throw new Error('Invalid balance received');
+        }
+        
+        return { address, balance };
       } catch (error: any) {
-        console.error("Ethereum connection error:", error);
-        throw new Error(error.message || 'Failed to connect to Ethereum wallet.');
+        if (error.code === 4001) {
+          throw new Error('User rejected connection');
+        }
+        throw new Error(`Connection failed: ${error.message || 'Unknown error'}`);
       }
     },
     getBalance: async (address: string) => {
+      if (!isValidEthereumAddress(address)) {
+        throw new Error('Invalid address provided');
+      }
       if (typeof window.ethereum === 'undefined') return '0';
+      
       try {
         const provider = new ethers.BrowserProvider(window.ethereum);
         const balanceWei = await provider.getBalance(address);
         return ethers.formatEther(balanceWei);
       } catch (error) {
-        console.error("Error fetching Ethereum balance:", error);
+        console.error('Error fetching balance:', error);
         return '0';
       }
     },
   },
-  {
-    id: 'solana',
-    name: 'Solana (Phantom)',
-    connect: async () => {
-      const fakeAddress = getFakeAddress('solana');
-      return {
-        address: fakeAddress,
-        balance: getFakeBalance('solana'),
-      };
-    },
-    getBalance: async (address: string) => {
-      return getFakeBalance('solana');
-    },
-  },
 ];
 
-export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [wallet, setWallet] = useState<ConnectedWallet | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
 
   useEffect(() => {
-    const checkConnection = async () => {
-      if (typeof window !== 'undefined' && window.ethereum?.selectedAddress) {
-        try {
-          const chainId = await window.ethereum.request({ method: 'eth_chainId' });
-          if (chainId !== '0xaa36a7') {
-            return;
-          }
-
-          const provider = new ethers.BrowserProvider(window.ethereum);
-          const signer = await provider.getSigner();
-          const address = await signer.getAddress();
-          const balanceWei = await provider.getBalance(address);
-          const balance = ethers.formatEther(balanceWei);
-
-          setWallet({ provider: 'ethereum', address, balance });
+    const savedWallet = localStorage.getItem('wallet');
+    const savedIsConnected = localStorage.getItem('isConnected');
+    
+    if (savedWallet && savedIsConnected === 'true') {
+      try {
+        const parsedWallet = JSON.parse(savedWallet);
+        if (isValidEthereumAddress(parsedWallet.address)) {
+          setWallet(parsedWallet);
           setIsConnected(true);
-        } catch (err) {
-          console.error("Error restoring Ethereum session:", err);
+        } else {
+          localStorage.removeItem('wallet');
+          localStorage.setItem('isConnected', 'false');
         }
+      } catch (error) {
+        localStorage.removeItem('wallet');
+        localStorage.setItem('isConnected', 'false');
       }
-    };
-
-    checkConnection();
+    }
   }, []);
 
   const connectWallet = async (providerId: WalletType) => {
+    if (connecting) return;
+    
     setConnecting(true);
     try {
       const provider = WALLET_PROVIDERS.find(p => p.id === providerId);
-      if (!provider) {
-        throw new Error(`Provider ${providerId} not found.`);
-      }
-
+      if (!provider) throw new Error(`Provider ${providerId} not found.`);
+      
       const walletData = await provider.connect();
-      setWallet({ ...walletData, provider: providerId });
+      const newWallet = { ...walletData, provider: providerId };
+      
+      setWallet(newWallet);
       setIsConnected(true);
+      localStorage.setItem('wallet', JSON.stringify(newWallet));
+      localStorage.setItem('isConnected', 'true');
     } catch (err: any) {
-      console.error("Connection failed:", err);
-      alert(err.message || 'Failed to connect wallet.');
+      setIsConnected(false);
+      setWallet(null);
+      localStorage.removeItem('wallet');
+      localStorage.setItem('isConnected', 'false');
+      throw err;
     } finally {
       setConnecting(false);
     }
@@ -169,178 +135,116 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const disconnectWallet = () => {
     setWallet(null);
     setIsConnected(false);
+    localStorage.removeItem('wallet');
+    localStorage.setItem('isConnected', 'false');
   };
 
   const refreshBalance = async () => {
     if (!wallet) return;
+    
     try {
       const provider = WALLET_PROVIDERS.find(p => p.id === wallet.provider);
       if (provider) {
         const newBalance = await provider.getBalance(wallet.address);
         setWallet(prev => prev ? { ...prev, balance: newBalance } : null);
       }
-    } catch (err) {
-      console.error("Error refreshing balance:", err);
+    } catch (error) {
+      console.error('Error refreshing balance:', error);
     }
   };
 
   const sendContribution = async (
-    amount: string, 
-    network: WalletType, 
-    tokenType: 'ETH' | 'LINK'
+    amount: string,
+    network: WalletType
   ): Promise<string | null> => {
     if (!wallet || wallet.provider !== network) {
-      alert(`Please connect to the ${network} network.`);
-      return null;
+      throw new Error(`Please connect to the ${network} network.`);
     }
-
-    if (network === 'ethereum') {
-      if (typeof window.ethereum === 'undefined') {
-        alert('MetaMask not found. Please install MetaMask.');
-        return null;
-      }
-
-      try {
-        const provider = new ethers.BrowserProvider(window.ethereum);
-        const signer = await provider.getSigner();
-
-        let tx;
-        if (tokenType === 'ETH') {
-          tx = await signer.sendTransaction({
-            to: RECIPIENT_ADDRESS,
-            value: ethers.parseEther(amount),
-          });
-        } else if (tokenType === 'LINK') {
-          const linkTokenAddress = '0x779877a7b0d9e8603169ddbd7836e478b4624789'; // Адрес Sepolia LINK
-          const linkContract = new ethers.Contract(linkTokenAddress, ERC20_TRANSFER_ABI, signer);
-          const amountInWei = ethers.parseUnits(amount, 18);
-          
-          tx = await linkContract.transfer(RECIPIENT_ADDRESS, amountInWei);
-        } else {
-           throw new Error(`Unsupported token type: ${tokenType}`);
-        }
-
-        const receipt = await tx.wait();
-        if (receipt.status !== 1) {
-          throw new Error('Transaction failed on the blockchain.');
-        }
-
-        const contributionData = {
-          from: wallet.address,
-          txHash: tx.hash,
-          network,
-          amountEth: tokenType === 'ETH' ? parseFloat(amount) : 0,
-          tokenAmount: parseFloat(amount) * (tokenType === 'ETH' ? CONVERSION_RATE : 1),
-          tokenType
-        };
-        await saveContribution(contributionData);
-
-        return tx.hash;
-      } catch (error: any) {
-        console.error("Contribution error:", error);
-        alert(`Error sending contribution: ${error.message || error.reason || 'Unknown error'}`);
-        return null;
-      }
-    } else if (network === 'solana') {
-      alert('Solana contribution is not yet implemented.');
-      return null;
+    
+    if (!isValidEthereumAddress(wallet.address)) {
+      throw new Error('Invalid wallet address');
     }
-
-    return null;
-  };
-
-  const getTokenBalance = async (tokenAddress: string, userAddress: string): Promise<TokenBalance> => {
+    
+    if (!isValidEthereumAddress(DONATION_WALLET_ADDRESS)) {
+      throw new Error('Invalid donation wallet address');
+    }
+    
+    const amountNum = parseFloat(amount);
+    if (isNaN(amountNum) || amountNum <= 0) {
+      throw new Error('Invalid amount');
+    }
+    
     if (typeof window.ethereum === 'undefined') {
-      return {
-        name: 'Unknown',
-        symbol: 'UNK',
-        balance: '0',
-        address: tokenAddress,
-        type: 'ERC20'
-      };
+      throw new Error('MetaMask not found');
     }
-
+    
     try {
       const provider = new ethers.BrowserProvider(window.ethereum);
-      const contract = new ethers.Contract(tokenAddress, ERC20_ABI, provider);
+      const signer = await provider.getSigner();
       
-      const [balance, decimals, symbol] = await Promise.all([
-        contract.balanceOf(userAddress),
-        contract.decimals(),
-        contract.symbol()
-      ]);
-
-      return {
-        name: `${symbol} Token`,
-        symbol,
-        balance: ethers.formatUnits(balance, decimals),
-        address: tokenAddress,
-        type: 'ERC20'
-      };
-    } catch (error) {
-      console.error("Error fetching token balance:", error);
-      return {
-        name: 'Unknown',
-        symbol: 'UNK',
-        balance: '0',
-        address: tokenAddress,
-        type: 'ERC20'
-      };
+      const balanceWei = await provider.getBalance(wallet.address);
+      const userBalance = ethers.formatEther(balanceWei);
+      
+      if (parseFloat(userBalance) < amountNum) {
+        throw new Error(`Insufficient balance. You have ${userBalance} ETH, trying to send ${amountNum} ETH`);
+      }
+      
+      const tx = await signer.sendTransaction({
+        to: DONATION_WALLET_ADDRESS,
+        value: ethers.parseEther(amount),
+      });
+      
+      const receipt = await tx.wait();
+      
+      if (!receipt || receipt.status !== 1) {
+        throw new Error('Transaction failed on blockchain');
+      }
+      
+      const txHash = tx.hash;
+      const amountEth = amountNum;
+      const tokenAmount = amountNum * 1000;
+      
+      await saveContribution({
+        from: wallet.address,
+        txHash,
+        network,
+        amountEth,
+        tokenAmount,
+      });
+      
+      return txHash;
+    } catch (error: any) {
+      if (error.code === 4001) {
+        throw new Error('User rejected transaction');
+      }
+      if (error.code === 'INSUFFICIENT_FUNDS') {
+        throw new Error('Insufficient funds for transaction');
+      }
+      throw new Error(`Transaction failed: ${error.message || 'Unknown error'}`);
     }
   };
 
   const getTokenBalances = async (): Promise<TokenBalance[]> => {
-    if (!wallet || wallet.provider !== 'ethereum') {
-      return [];
-    }
-
+    if (!wallet || wallet.provider !== 'ethereum') return [];
+    if (typeof window.ethereum === 'undefined') return [];
+    
     try {
       const provider = new ethers.BrowserProvider(window.ethereum);
-      const ethBalanceWei = await provider.getBalance(wallet.address);
-      const ethBalance = ethers.formatEther(ethBalanceWei);
+      const balanceWei = await provider.getBalance(wallet.address);
+      const ethBalance = ethers.formatEther(balanceWei);
       
-      const nativeToken: TokenBalance = {
+      return [{
         name: 'SepoliaETH',
         symbol: 'SEP',
         balance: ethBalance,
         address: '0x0000000000000000000000000000000000000000',
-        type: 'NATIVE'
-      };
-
-      const erc20Tokens = [
-        {
-          name: 'Chainlink Token',
-          symbol: 'LINK',
-          address: '0x779877a7b0d9e8603169ddbd7836e478b4624789'
-        }
-      ];
-
-      const erc20Balances: TokenBalance[] = [];
-      for (const token of erc20Tokens) {
-        try {
-          const balance = await getTokenBalance(token.address, wallet.address);
-          erc20Balances.push({
-            ...balance,
-            type: 'ERC20'
-          });
-        } catch (error) {
-          console.error(`Error fetching balance for ${token.symbol}:`, error);
-          erc20Balances.push({
-            ...token,
-            balance: '0',
-            type: 'ERC20'
-          });
-        }
-      }
-
-      return [nativeToken, ...erc20Balances];
-
+        type: 'NATIVE',
+      }];
     } catch (error) {
       console.error('Error fetching token balances:', error);
       return [];
     }
   };
-
 
   return (
     <WalletContext.Provider

@@ -5,44 +5,16 @@ import Header from '@/components/layout/Header';
 import Footer from '@/components/layout/Footer';
 import ContributionForm from '@/components/contribution/ContributionForm';
 import { ContributionHistory } from '@/components/contribution/ContributionHistory';
-import { WalletProvider, useWallet } from '@/components/wallet/WalletContext';
-import type { WalletProvider as WalletProviderType, WalletType } from '@/types/wallet';
+import { WalletProvider, useWallet, WALLET_PROVIDERS } from '@/components/wallet/WalletContext';
+import type { WalletType } from '@/types/wallet';
 import { getTotalStats } from '@/services/api';
-
-const EthereumIcon = (props: React.SVGProps<SVGSVGElement>) => (
-  <svg {...props} viewBox="0 0 24 24" fill="currentColor">
-    <path d="M11.944 17.97L4.58 13.62 11.943 24l7.37-10.38-7.372 4.35h.003zM12.056 0L4.69 12.223l7.365 4.354 7.365-4.35L12.056 0z" />
-  </svg>
-);
-
-const SolanaIcon = (props: React.SVGProps<SVGSVGElement>) => (
-  <svg {...props} viewBox="0 0 24 24" fill="currentColor">
-    <path d="M12 0c-6.627 0-12 5.373-12 12s5.373 12 12 12 12-5.373 12-12-5.373-12-12-12zm0 22c-5.514 0-10-4.486-10-10s4.486-10 10-10 10 4.486 10 10-4.486 10-10 10zm-5-5h10v-2h-10v2zm0-4h10v-2h-10v2zm0-4h10v-2h-10v2z" />
-  </svg>
-);
-
-const WALLET_PROVIDERS: WalletProviderType[] = [
-  {
-    id: 'ethereum',
-    name: 'Ethereum (MetaMask)',
-    icon: EthereumIcon,
-    connect: async () => ({ address: '', balance: '' }),
-    getBalance: async () => '',
-  },
-  {
-    id: 'solana',
-    name: 'Solana (Phantom)',
-    icon: SolanaIcon,
-    connect: async () => ({ address: '', balance: '' }),
-    getBalance: async () => '',
-  },
-];
 
 const HomeContent = () => {
   const { wallet, isConnected, connectWallet, disconnectWallet, sendContribution, getTokenBalances } = useWallet();
   const [totalStats, setTotalStats] = useState({ totalEth: 0, totalTokens: 0 });
   const [tokenBalances, setTokenBalances] = useState<any[]>([]);
   const [loadingTokens, setLoadingTokens] = useState(false);
+  const [contribHistoryKey, setContribHistoryKey] = useState(0);
 
   useEffect(() => {
     const fetchTotalStats = async () => {
@@ -73,7 +45,6 @@ const HomeContent = () => {
         setTokenBalances([]);
       }
     };
-
     fetchTokenBalances();
   }, [isConnected, wallet, getTokenBalances]);
 
@@ -92,53 +63,48 @@ const HomeContent = () => {
     toast.info('Wallet disconnected');
   };
 
-  const handleContribute = async (network: 'ethereum' | 'solana', amount: string, tokenType: 'ETH' | 'LINK') => {
+  const handleContribute = async (network: 'ethereum', amount: string) => {
     if (!isConnected || !wallet) {
       toast.error('Please connect your wallet first.');
       return;
     }
-
-    if (network === 'ethereum') {
-      try {
-        const txHash = await sendContribution(amount, network, tokenType);
-        if (txHash) {
-          toast.success(
-            <div>
-              Contribution sent successfully!
-              <br />
-              <a
-                href={`https://sepolia.etherscan.io/tx/${txHash}`}
-                target="_blank"
-                rel="noreferrer"
-                className="text-blue-400 underline text-sm"
-              >
-                View on Etherscan
-              </a>
-            </div>
-          );
-
-          try {
-            const stats = await getTotalStats();
-            setTotalStats(stats);
-          } catch (error) {
-            console.error("Error updating stats:", error);
-          }
-
-          setLoadingTokens(true);
-          try {
-            const balances = await getTokenBalances();
-            setTokenBalances(balances);
-          } catch (error) {
-            console.error('Error refreshing token balances:', error);
-          } finally {
-            setLoadingTokens(false);
-          }
+    try {
+      const txHash = await sendContribution(amount, network);
+      if (txHash) {
+        toast.success(
+          <div>
+            Contribution sent successfully!
+            <br />
+            <a
+              href={`https://sepolia.etherscan.io/tx/${txHash}`}
+              target="_blank"
+              rel="noreferrer"
+              className="text-blue-400 underline text-sm"
+            >
+              View on Etherscan
+            </a>
+          </div>
+        );
+        try {
+          const stats = await getTotalStats();
+          setTotalStats(stats);
+        } catch (error) {
+          console.error("Error updating stats:", error);
         }
-      } catch (error: any) {
-        console.error("Contribution error (caught in Home):", error);
+        setLoadingTokens(true);
+        try {
+          const balances = await getTokenBalances();
+          setTokenBalances(balances);
+        } catch (error) {
+          console.error('Error refreshing token balances:', error);
+        } finally {
+          setLoadingTokens(false);
+        }
+        setContribHistoryKey(prev => prev + 1);
       }
-    } else {
-      toast.info('Solana contributions are not yet implemented.');
+    } catch (error: any) {
+      console.error("Contribution error (caught in Home):", error);
+      toast.error(error.message || 'Failed to send contribution');
     }
   };
 
@@ -153,8 +119,7 @@ const HomeContent = () => {
       />
       <main className="max-w-5xl mx-auto p-6 pt-10 space-y-8">
         <ContributionForm connected={isConnected} onSubmit={handleContribute} />
-        {isConnected && wallet && <ContributionHistory address={wallet.address} />}
-        
+        {isConnected && wallet && <ContributionHistory key={contribHistoryKey} address={wallet.address} />}
         {isConnected && wallet && wallet.provider === 'ethereum' && (
           <section className="bg-white/10 backdrop-blur-sm border border-purple-700 rounded-xl p-6">
             <h2 className="text-xl font-semibold mb-4">Your Tokens (Sepolia)</h2>
@@ -171,10 +136,8 @@ const HomeContent = () => {
                         <h3 className="font-bold">{token.symbol}</h3>
                         <p className="text-sm text-gray-300">{token.name}</p>
                       </div>
-                      <span className={`px-2 py-1 text-xs rounded ${
-                        token.type === 'NATIVE' ? 'bg-blue-500' : 'bg-green-500'
-                      }`}>
-                        {token.type === 'NATIVE' ? 'Native' : 'ERC-20'}
+                      <span className="px-2 py-1 text-xs rounded bg-blue-500">
+                        Native
                       </span>
                     </div>
                     <p className="mt-2 font-mono text-right">{parseFloat(token.balance).toFixed(4)}</p>
@@ -184,7 +147,6 @@ const HomeContent = () => {
             )}
           </section>
         )}
-        
         <section className="bg-white/10 backdrop-blur-sm border border-purple-700 rounded-xl p-6">
           <h2 className="text-xl font-semibold mb-2">Total Contributions</h2>
           <p><strong>ETH:</strong> {totalStats.totalEth.toFixed(4)} ETH</p>

@@ -1,4 +1,4 @@
-export type WalletType = 'ethereum' | 'solana';
+export type WalletType = 'ethereum';
 
 export interface WalletProvider {
   id: WalletType;
@@ -19,5 +19,5 @@ export interface TokenBalance {
   symbol: string;
   balance: string;
   address: string;
-  type: 'NATIVE' | 'ERC20';
+  type: 'NATIVE';
 }
