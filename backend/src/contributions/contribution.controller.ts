@@ -1,23 +1,29 @@
 import { Controller, Post, Get, Body, Query } from '@nestjs/common';
 import { ContributionService } from './contribution.service';
-import type { ContributionDto } from '../types/contribution.dto';
 
 @Controller('contributions')
 export class ContributionController {
   constructor(private readonly service: ContributionService) {}
 
   @Post()
-  async create(@Body() dto: ContributionDto) {
-    await this.service.create(dto);
-    return { message: 'Contribution saved' };
+  async create(@Body() body: any) {
+    return this.service.create({
+      from: body.from,
+      txHash: body.txHash,
+      network: body.network,
+      amountEth: body.amountEth,
+      tokenAmount: body.tokenAmount,
+    });
   }
 
-  @Get()
-  async findByAddress(@Query('address') address: string) {
+  // GET /contributions/me?address=...
+  @Get('me')
+  async getMyContributions(@Query('address') address: string) {
     if (!address) return [];
     return this.service.findByAddress(address);
   }
 
+  // GET /contributions/total
   @Get('total')
   async getTotal() {
     return this.service.getTotal();

@@ -3,7 +3,7 @@ import { Document } from 'mongoose';
 
 @Schema({ timestamps: true })
 export class Contribution extends Document {
-  @Prop({ required: true, lowercase: true })
+  @Prop({ required: true })
   from: string;
 
   @Prop({ required: true, unique: true })
@@ -23,5 +23,3 @@ export class Contribution extends Document {
 }
 
 export const ContributionSchema = SchemaFactory.createForClass(Contribution);
-
-export type ContributionDocument = Contribution & Document;
