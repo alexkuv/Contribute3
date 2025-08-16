@@ -25,7 +25,7 @@ export const ContributionHistory = ({ address }: { address: string }) => {
           setError(null);
         } catch (err) {
           console.error("Error fetching contributions:", err);
-          setError('Failed to load contribution history');
+          // setError('Failed to load contribution history');
         } finally {
           setLoading(false);
         }

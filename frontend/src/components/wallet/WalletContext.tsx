@@ -1,11 +1,18 @@
-// contexts/WalletContext.tsx
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { ethers } from 'ethers';
-import type { ConnectedWallet, WalletProvider as WalletProviderType, WalletType } from '@/types/wallet';
+import type { ConnectedWallet, WalletProvider as WalletProviderType, WalletType, TokenBalance } from '@/types/wallet';
 import { getFakeAddress, getFakeBalance } from '@/utils/walletUtils';
-import { saveContribution } from '@/services/api'; // Импортируем API
+import { saveContribution } from '@/services/api';
 
-// Определяем типы для контекста
+const ERC20_ABI = [
+  "function balanceOf(address owner) view returns (uint256)",
+  "function decimals() view returns (uint8)",
+  "function symbol() view returns (string)"
+];
+
+// ABI для transfer функции ERC-20
+const ERC20_TRANSFER_ABI = ["function transfer(address to, uint256 amount)"];
+
 type WalletContextType = {
   wallet: ConnectedWallet | null;
   isConnected: boolean;
@@ -13,24 +20,22 @@ type WalletContextType = {
   connectWallet: (providerId: WalletType) => Promise<void>;
   disconnectWallet: () => void;
   refreshBalance: () => Promise<void>;
-  sendContribution: (amount: string, network: WalletType) => Promise<string | null>; // Добавляем функцию отправки
+  sendContribution: (amount: string, network: WalletType, tokenType: 'ETH' | 'LINK') => Promise<string | null>; // Обновлено
+  getTokenBalances: () => Promise<TokenBalance[]>;
 };
 
-// Инициализация контекста
+
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
 
-// Адрес получателя (замените на ваш реальный адрес)
-const RECIPIENT_ADDRESS = import.meta.env.VITE_RECIPIENT_ADDRESS || '0x123...YOUR_ADDRESS_HERE...';
+// Адрес получателя
+const RECIPIENT_ADDRESS = '0x9B87Be4a795BCa96eFC23bf8a0911a2e993983E6';
 
-// Курс конвертации (1 ETH = 1000 XTK)
 const CONVERSION_RATE = 1000;
 
-// Провайдеры кошельков
 export const WALLET_PROVIDERS: WalletProviderType[] = [
   {
     id: 'ethereum',
     name: 'Ethereum (MetaMask)',
-    // icon: EthereumIcon, // Импортируйте иконку отдельно
     connect: async () => {
       if (typeof window.ethereum === 'undefined') {
         throw new Error('MetaMask not found. Please install MetaMask.');
@@ -38,6 +43,36 @@ export const WALLET_PROVIDERS: WalletProviderType[] = [
 
       try {
         await window.ethereum.request({ method: 'eth_requestAccounts' });
+        
+        const chainId = await window.ethereum.request({ method: 'eth_chainId' });
+        if (chainId !== '0xaa36a7') { // Sepolia chainId (11155111)
+          try {
+            await window.ethereum.request({
+              method: 'wallet_switchEthereumChain',
+              params: [{ chainId: '0xaa36a7' }],
+            });
+          } catch (switchError: any) {
+            if (switchError.code === 4902) {
+              await window.ethereum.request({
+                method: 'wallet_addEthereumChain',
+                params: [{
+                  chainId: '0xaa36a7',
+                  chainName: 'Sepolia Test Network',
+                  rpcUrls: ['https://rpc.sepolia.org'],
+                  nativeCurrency: {
+                    name: 'SepoliaETH',
+                    symbol: 'SEP',
+                    decimals: 18
+                  },
+                  blockExplorerUrls: ['https://sepolia.etherscan.io']
+                }]
+              });
+            } else {
+              throw switchError;
+            }
+          }
+        }
+
         const provider = new ethers.BrowserProvider(window.ethereum);
         const signer = await provider.getSigner();
         const address = await signer.getAddress();
@@ -68,10 +103,7 @@ export const WALLET_PROVIDERS: WalletProviderType[] = [
   {
     id: 'solana',
     name: 'Solana (Phantom)',
-    // icon: SolanaIcon, // Импортируйте иконку отдельно
     connect: async () => {
-      // TODO: Реализовать подключение к Solana (Phantom и т.д.)
-      // Пока используем фейковые данные
       const fakeAddress = getFakeAddress('solana');
       return {
         address: fakeAddress,
@@ -79,8 +111,7 @@ export const WALLET_PROVIDERS: WalletProviderType[] = [
       };
     },
     getBalance: async (address: string) => {
-      // TODO: Реализовать получение баланса для Solana
-      return getFakeBalance('solana'); // Пока заглушка
+      return getFakeBalance('solana');
     },
   },
 ];
@@ -94,6 +125,11 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const checkConnection = async () => {
       if (typeof window !== 'undefined' && window.ethereum?.selectedAddress) {
         try {
+          const chainId = await window.ethereum.request({ method: 'eth_chainId' });
+          if (chainId !== '0xaa36a7') {
+            return;
+          }
+
           const provider = new ethers.BrowserProvider(window.ethereum);
           const signer = await provider.getSigner();
           const address = await signer.getAddress();
@@ -148,7 +184,11 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }
   };
 
-  const sendContribution = async (amount: string, network: WalletType): Promise<string | null> => {
+  const sendContribution = async (
+    amount: string, 
+    network: WalletType, 
+    tokenType: 'ETH' | 'LINK'
+  ): Promise<string | null> => {
     if (!wallet || wallet.provider !== network) {
       alert(`Please connect to the ${network} network.`);
       return null;
@@ -164,41 +204,141 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         const provider = new ethers.BrowserProvider(window.ethereum);
         const signer = await provider.getSigner();
 
-        // Отправка транзакции
-        const tx = await signer.sendTransaction({
-          to: RECIPIENT_ADDRESS,
-          value: ethers.parseEther(amount),
-        });
+        let tx;
+        if (tokenType === 'ETH') {
+          tx = await signer.sendTransaction({
+            to: RECIPIENT_ADDRESS,
+            value: ethers.parseEther(amount),
+          });
+        } else if (tokenType === 'LINK') {
+          const linkTokenAddress = '0x779877a7b0d9e8603169ddbd7836e478b4624789'; // Адрес Sepolia LINK
+          const linkContract = new ethers.Contract(linkTokenAddress, ERC20_TRANSFER_ABI, signer);
+          const amountInWei = ethers.parseUnits(amount, 18);
+          
+          tx = await linkContract.transfer(RECIPIENT_ADDRESS, amountInWei);
+        } else {
+           throw new Error(`Unsupported token type: ${tokenType}`);
+        }
 
-        // Ожидание подтверждения
         const receipt = await tx.wait();
         if (receipt.status !== 1) {
           throw new Error('Transaction failed on the blockchain.');
         }
 
-        // Сохранение вклада в бэкенд
         const contributionData = {
           from: wallet.address,
           txHash: tx.hash,
           network,
-          amountEth: parseFloat(amount),
-          tokenAmount: parseFloat(amount) * CONVERSION_RATE,
+          amountEth: tokenType === 'ETH' ? parseFloat(amount) : 0,
+          tokenAmount: parseFloat(amount) * (tokenType === 'ETH' ? CONVERSION_RATE : 1),
+          tokenType
         };
         await saveContribution(contributionData);
 
-        return tx.hash; // Возвращаем хэш транзакции
+        return tx.hash;
       } catch (error: any) {
         console.error("Contribution error:", error);
         alert(`Error sending contribution: ${error.message || error.reason || 'Unknown error'}`);
         return null;
       }
     } else if (network === 'solana') {
-      // TODO: Реализовать отправку для Solana
       alert('Solana contribution is not yet implemented.');
       return null;
     }
 
     return null;
+  };
+
+  const getTokenBalance = async (tokenAddress: string, userAddress: string): Promise<TokenBalance> => {
+    if (typeof window.ethereum === 'undefined') {
+      return {
+        name: 'Unknown',
+        symbol: 'UNK',
+        balance: '0',
+        address: tokenAddress,
+        type: 'ERC20'
+      };
+    }
+
+    try {
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const contract = new ethers.Contract(tokenAddress, ERC20_ABI, provider);
+      
+      const [balance, decimals, symbol] = await Promise.all([
+        contract.balanceOf(userAddress),
+        contract.decimals(),
+        contract.symbol()
+      ]);
+
+      return {
+        name: `${symbol} Token`,
+        symbol,
+        balance: ethers.formatUnits(balance, decimals),
+        address: tokenAddress,
+        type: 'ERC20'
+      };
+    } catch (error) {
+      console.error("Error fetching token balance:", error);
+      return {
+        name: 'Unknown',
+        symbol: 'UNK',
+        balance: '0',
+        address: tokenAddress,
+        type: 'ERC20'
+      };
+    }
+  };
+
+  const getTokenBalances = async (): Promise<TokenBalance[]> => {
+    if (!wallet || wallet.provider !== 'ethereum') {
+      return [];
+    }
+
+    try {
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const ethBalanceWei = await provider.getBalance(wallet.address);
+      const ethBalance = ethers.formatEther(ethBalanceWei);
+      
+      const nativeToken: TokenBalance = {
+        name: 'SepoliaETH',
+        symbol: 'SEP',
+        balance: ethBalance,
+        address: '0x0000000000000000000000000000000000000000',
+        type: 'NATIVE'
+      };
+
+      const erc20Tokens = [
+        {
+          name: 'Chainlink Token',
+          symbol: 'LINK',
+          address: '0x779877a7b0d9e8603169ddbd7836e478b4624789'
+        }
+      ];
+
+      const erc20Balances: TokenBalance[] = [];
+      for (const token of erc20Tokens) {
+        try {
+          const balance = await getTokenBalance(token.address, wallet.address);
+          erc20Balances.push({
+            ...balance,
+            type: 'ERC20'
+          });
+        } catch (error) {
+          console.error(`Error fetching balance for ${token.symbol}:`, error);
+          erc20Balances.push({
+            ...token,
+            balance: '0',
+            type: 'ERC20'
+          });
+        }
+      }
+
+      return [nativeToken, ...erc20Balances];
+
+    } catch (error) {
+      console.error('Error fetching token balances:', error);
+      return [];
+    }
   };
 
 
@@ -211,7 +351,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         connectWallet,
         disconnectWallet,
         refreshBalance,
-        sendContribution, // Экспортируем новую функцию
+        sendContribution,
+        getTokenBalances,
       }}
     >
       {children}

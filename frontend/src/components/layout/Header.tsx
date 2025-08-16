@@ -21,16 +21,16 @@ const Header: React.FC<Props> = ({ connected, wallet, providers, onConnect, onDi
           {connected && wallet ? (
             <div className="bg-white/10 backdrop-blur-sm border border-purple-700 rounded-xl p-4 flex items-center justify-between">
               <div>
-                <p className="text-sm"><strong>Network:</strong> {wallet.provider === 'ethereum' ? 'Ethereum' : 'Solana'}</p>
+                <p className="text-sm"><strong>Network:</strong> {wallet.provider === 'ethereum' ? 'Sepolia' : 'Solana'}</p>
                 <p className="text-sm"><strong>Address:</strong> {shortenAddress(wallet.address)}</p>
-                <p className="text-sm"><strong>Balance:</strong> {wallet.balance} {wallet.provider === 'ethereum' ? 'ETH' : 'SOL'}</p>
+                <p className="text-sm"><strong>Balance:</strong> {parseFloat(wallet.balance).toFixed(4)} {wallet.provider === 'ethereum' ? 'SEP' : 'SOL'}</p>
               </div>
               <Button onClick={onDisconnect} variant="danger" size="sm">
                 Disconnect
               </Button>
             </div>
           ) : (
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center space-x-2 flex-wrap">
               {providers.map((provider) => {
                 const Icon = provider.icon;
                 return (
@@ -39,8 +39,9 @@ const Header: React.FC<Props> = ({ connected, wallet, providers, onConnect, onDi
                     onClick={() => onConnect(provider.id)}
                     variant="primary"
                     className="flex items-center"
+                    size="sm"
                   >
-                    <Icon className="w-4 h-4 mr-2" />
+                    {Icon && <Icon className="w-4 h-4 mr-2" />}
                     Connect {provider.name}
                   </Button>
                 );
