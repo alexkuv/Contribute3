@@ -1,35 +1,27 @@
-// Скрипт инициализации MongoDB
-// Создаёт базу данных и пользователя с правами на чтение/запись
+// Получаем параметры из переменных окружения
+const DB_NAME = process.env.MONGO_DATABASE;
+const APP_USER = process.env.MONGO_APP_USER;
+const APP_PASS = process.env.MONGO_APP_PASSWORD;
 
-db = db.getSiblingDB('contribute3');
+// Создаём базу данных и пользователя
+db = db.getSiblingDB(DB_NAME);
 
-// Создаём пользователя для приложения
 db.createUser({
-  user: 'contribute3_user',
-  pwd: 'contribute3_pass',
-  roles: [
-    {
-      role: 'readWrite',
-      db: 'contribute3'
-    }
-  ]
+  user: APP_USER,
+  pwd: APP_PASS,
+  roles: [{
+    role: 'readWrite',
+    db: DB_NAME
+  }]
 });
 
-// Создаём коллекцию contributions если её нет
+// Создаём коллекции и индексы
 db.createCollection('contributions');
-
-// Создаём индексы для оптимизации
 db.contributions.createIndex({ "from": 1 });
 db.contributions.createIndex({ "txHash": 1 }, { unique: true });
 db.contributions.createIndex({ "timestamp": -1 });
 
-print('MongoDB initialized successfully!');
-print('Database: contribute3');
-print('User: contribute3_user');
-print('Collections: contributions');
-
-
-
-
-
-
+print(`MongoDB initialized successfully!
+Database: ${DB_NAME}
+User: ${APP_USER}
+Collections: contributions`);
