@@ -1,4 +1,3 @@
-// components/layout/Header.tsx
 import React from 'react';
 import type { WalletProvider, ConnectedWallet, WalletType } from '@/types/wallet';
 import { shortenAddress } from '@/utils/walletUtils';

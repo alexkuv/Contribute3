@@ -1,4 +1,3 @@
-// components/contribution/ContributionHistory.tsx
 import { useEffect, useState } from 'react';
 import { getMyContributions } from '@/services/api';
 import { shortenAddress } from '@/utils/walletUtils';
