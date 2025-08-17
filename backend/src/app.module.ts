@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ContributionModule } from './contributions/contribution.module';
 import * as dotenv from 'dotenv';
-import { AppController } from '../src/app.controller';
+import { AppController } from './app.controller';
 import { AppService } from './app.service';
 
 dotenv.config();

@@ -36,6 +36,10 @@ export const sendContribution = async (
 
     // Ждем подтверждения транзакции
     const receipt = await tx.wait();
+
+    if (receipt === null) {
+      throw new Error('Transaction was not mined (receipt is null).');
+    }
     
     // Проверяем статус транзакции
     if (receipt.status !== 1) {

@@ -25,7 +25,7 @@ const Header: React.FC<Props> = ({ connected, wallet, providers, onConnect, onDi
                 <p className="text-sm"><strong>Address:</strong> {shortenAddress(wallet.address)}</p>
                 <p className="text-sm"><strong>Balance:</strong> {parseFloat(wallet.balance).toFixed(4)} {wallet.provider === 'ethereum' ? 'SEP' : 'SOL'}</p>
               </div>
-              <Button onClick={onDisconnect} variant="danger" size="sm">
+              <Button onClick={onDisconnect} variant="danger">
                 Disconnect
               </Button>
             </div>
@@ -39,7 +39,6 @@ const Header: React.FC<Props> = ({ connected, wallet, providers, onConnect, onDi
                     onClick={() => onConnect(provider.id)}
                     variant="primary"
                     className="flex items-center"
-                    size="sm"
                   >
                     {Icon && <Icon className="w-4 h-4 mr-2" />}
                     Connect {provider.name}

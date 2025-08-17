@@ -1,6 +1,6 @@
 // components/contribution/ContributionHistory.tsx
 import { useEffect, useState } from 'react';
-import { getMyContributions, getTotalStats } from '@/services/api';
+import { getMyContributions } from '@/services/api';
 import { shortenAddress } from '@/utils/walletUtils';
 
 type Contribution = {
